@@ -13,22 +13,34 @@ using System.Collections.Generic;
 
 class OverlappingModel : Model
 {
-    int N;
-    byte[][] patterns;
-    List<Color> colors;
-    int ground;
+    int N; // `N` is the number of pixels in the side of the pattern
+    byte[][] patterns; // an array of unique patterns found in the source image
+    List<Color> colors; // an array of all possible colors found in the source image
+    int ground; // the ground value, should not be higher than image height
 
     public OverlappingModel(string name, int N, int width, int height, bool periodicInput, bool periodicOutput, int symmetry, int ground)
         : base(width, height)
     {
-        this.N = N;
+        this.N = N; // store the `N` (the number of pixels in the side of the pattern)
+        // `periodicOutput` means that we treat the output image as infinitely
+        // repeating in every direction and so there are no borderline
+        // pixels: every edge wraps and gets connected to the opposite edge;
+        // don't mix with the `periodicInput` which means the same but
+        // for the source image, and so is called `periodicInput` versus
+        // `periodic` below;
         periodic = periodicOutput;
 
+        // SMX and SMY are pixel dimensions of the source image
         var bitmap = new Bitmap($"samples/{name}.png");
         int SMX = bitmap.Width, SMY = bitmap.Height;
+        // this `SMXxSMY` will store the indices of unique colors ,
+        // _not_ RGBA or the color value in any sense, but the color ID
+        // for every pixel
         byte[,] sample = new byte[SMX, SMY];
         colors = new List<Color>();
 
+        // collect all the unique colors from the image,
+        // store them into the `colors` list;
         for (int y = 0; y < SMY; y++) for (int x = 0; x < SMX; x++)
             {
                 Color color = bitmap.GetPixel(x, y);
@@ -44,9 +56,20 @@ class OverlappingModel : Model
                 sample[x, y] = (byte)i;
             }
 
+        // `C` is now the number of unique colors in the image
         int C = colors.Count;
+        // and `W` is `C ^ (N ^ 2)`, so the number of
+        // all the possible x <-> y <-> (unique color index) combinations:
+        // for every pixel for any pattern of size NxN there is
+        // an equal possibility for one of the unique colors
+        // to be present at that place;
         long W = C.ToPower(N * N);
 
+        // build a pattern:
+        // take some function which returns color value
+        // for a given position (`x` & `y`), and build a
+        // flat array of the size (`N * N`) filled with
+        // the values returned from such function;
         byte[] pattern(Func<int, int, byte> f)
         {
             byte[] result = new byte[N * N];
@@ -54,21 +77,36 @@ class OverlappingModel : Model
             return result;
         };
 
+        // so this function gets the pattern from the source by its location
+        // (`x` & `y`) and returns the flat array of its pixels;
         byte[] patternFromSample(int x, int y) => pattern((dx, dy) => sample[(x + dx) % SMX, (y + dy) % SMY]);
+        // and this one rotates the given pattern by 90 degrees and returns the rearranged pixels
         byte[] rotate(byte[] p) => pattern((x, y) => p[N - 1 - y + x * N]);
+        // and this one mirrors the given pattern and returns the rearranged pixels
         byte[] reflect(byte[] p) => pattern((x, y) => p[N - 1 - x + y * N]);
 
+        // `index` here is like the unique hash sum (fingerprint) of the pattern,
+        // so for the patterns with the same color IDs at the same positions,
+        // their hash sums (here, indices) are equal
         long index(byte[] p)
         {
             long result = 0, power = 1;
             for (int i = 0; i < p.Length; i++)
             {
+                // the `i` used in the reverse order because
+                // the `unpacking` process uses the subtraction
+                // to restore the color IDs
                 result += p[p.Length - 1 - i] * power;
+                // remember that C is also the amount
+                // of all the possibilities for the specific pixel
+                // and the number of unique colors in the source image
                 power *= C;
             }
             return result;
         };
 
+        // get all the pixels of the pattern of size `N` using its known
+        // hash sum, which is revertible
         byte[] patternFromIndex(long ind)
         {
             long residue = ind, power = W;
@@ -91,13 +129,30 @@ class OverlappingModel : Model
             return result;
         };
 
+        // the dictionary, mapping the unique hash sums of the patterns
+        // to their weights, where `weight` is the amount of times the pattern
+        // occured in the source, considering its reflections and rotations
         Dictionary<long, int> weights = new Dictionary<long, int>();
+        // the list of all the hash sums of the unique patterns
         List<long> ordering = new List<long>();
 
+        // collect the unique patterns in the source image,
+        // by visiting every pixel in that image, extracting
+        // the pattern of size `NxN` starting from that pixel,
+        // rotating and reflecting it and then comparing the hash
+        // sum of every such modification to what was found before
+        // — and if that hash sum already was met, increasing the `weight`
+        // value for that hash sum;
+        // if `periodicInput` is disabled, stop before the patterns
+        // would overflow image borders;
         for (int y = 0; y < (periodicInput ? SMY : SMY - N + 1); y++) for (int x = 0; x < (periodicInput ? SMX : SMX - N + 1); x++)
             {
+                // the array to store all the symmetries of the pattern
                 byte[][] ps = new byte[8][];
 
+                // extract the pattern at that position and rotate and reflect it
+                // in four directions
+                // (so four directions + four reflections == eight symmetries)
                 ps[0] = patternFromSample(x, y);
                 ps[1] = reflect(ps[0]);
                 ps[2] = rotate(ps[0]);
@@ -109,22 +164,33 @@ class OverlappingModel : Model
 
                 for (int k = 0; k < symmetry; k++)
                 {
+                    // calculate the hash sum for that symmetry
                     long ind = index(ps[k]);
+                    // increase the weight for that hash sum
+                    // if it was already met
                     if (weights.ContainsKey(ind)) weights[ind]++;
                     else
                     {
+                        // or instead add it to the storage with the weight of `1`
                         weights.Add(ind, 1);
                         ordering.Add(ind);
                     }
                 }
             }
 
+        // `T` is the number of unique patterns found
         T = weights.Count;
+        // make `ground` to not be higher than the number of unique patterns
         this.ground = (ground + T) % T;
+        // prepare the `patterns` array to have the size of `T`
         patterns = new byte[T][];
         base.weights = new double[T];
 
         int counter = 0;
+        // walk through all the unique patterns hash-sums (in the order they were
+        // discovered) and restore the patterns back to the matrices of the color IDs,
+        // and also fill in the `base` class storage of weights with the `weights`
+        // calculated before
         foreach (long w in ordering)
         {
             patterns[counter] = patternFromIndex(w);
