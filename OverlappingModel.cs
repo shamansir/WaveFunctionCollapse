@@ -198,6 +198,11 @@ class OverlappingModel : Model
             counter++;
         }
 
+        // given the `p1` as the pattern of size `N*N` and
+        // `p2` as the source image of whichever size,
+        // take the `NxN` rectangle in the source image at the
+        // position `(dx, dy)` and compare all the values
+        // with the pattern, return `true` when they are totally equal
         bool agrees(byte[] p1, byte[] p2, int dx, int dy)
         {
             int xmin = dx < 0 ? 0 : dx, xmax = dx < 0 ? dx + N : N, ymin = dy < 0 ? 0 : dy, ymax = dy < 0 ? dy + N : N;
@@ -205,18 +210,33 @@ class OverlappingModel : Model
             return true;
         };
 
+        // `DX` = { -1, 0, 1, 0 }
+        // `DY` = { 0, 1, 0, -1 }
+        // for the four cases, for every unique pattern,
+        // propagator stores the indices of the unique patterns that
+        // match with that pattern at the position of `(DX[case_index], DY[case_index])`
         propagator = new int[4][][];
         for (int d = 0; d < 4; d++)
         {
+            // `T` is the number of unique patterns
             propagator[d] = new int[T][];
             for (int t = 0; t < T; t++)
             {
                 List<int> list = new List<int>();
+                // for every unique pattern, take the other unique pattern
+                // from the same list and if they agree (match) at the
+                // `(DX[case_index], DY[case_index])` point,
+                // add the latter to the list of successes at this position
                 for (int t2 = 0; t2 < T; t2++) if (agrees(patterns[t], patterns[t2], DX[d], DY[d])) list.Add(t2);
                 propagator[d][t] = new int[list.Count];
                 for (int c = 0; c < list.Count; c++) propagator[d][t][c] = list[c];
             }
         }
+
+        // `propagator` actually stores the information about how the patterns match each other,
+        // (independently of the source) at different offsets:
+        // `(-1, 0)`, `(0, 1)`, `(1, 0)` and `(0, -1)`.
+        // notice that it's only in four directions: `N`, `W`, `S`, `E`
     }
 
     protected override bool OnBoundary(int x, int y) => !periodic && (x + N > FMX || y + N > FMY || x < 0 || y < 0);
