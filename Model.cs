@@ -12,6 +12,12 @@ abstract class Model
 {
     protected bool[][] wave;
 
+    // `propagator` stores the information
+    // about how each tile/pattern matches each other pattern
+    // (or itself) in four directions: `N`, `W`, `S`, `E`;
+    // so, for every direction, for every tile, there's a list
+    // of matching tiles for this particular tile in
+    // that particular direction
     protected int[][][] propagator;
     int[][][] compatible;
     protected int[] observed;
@@ -20,6 +26,8 @@ abstract class Model
     int stacksize;
 
     protected Random random;
+    // `FMXxFMY` is the size of the output image
+    // `T` is the number of unique tiles or patterns
     protected int FMX, FMY, T;
     protected bool periodic;
 
@@ -38,8 +46,20 @@ abstract class Model
 
     void Init()
     {
+        // initialize the `wave` as the flat array where every item is representing
+        // the "slot" in the ouput image, where _slot_ for `OverlappingModel` represents the
+        // single pixel, and for `SimpleTiled` model is the tile to place;
+        // the value of every such item is another array of the size `T`
+        // (number of unique "tiles"), so it contains the boolean value for every possible outcome: // if the outcoume still possible for that particular slot, or already not;
         wave = new bool[FMX * FMY][];
+        // this array is almost of the same shape (every _slot_ of the ouput image bound
+        // to the list of the possible outcomes), but contains arrays of four integers
+        // instead of one boolean, so each outcome has a corresponding four-integer array
+        // associated with it, four is the number of possible directions: `N`, `S`, `W`, `E`;
+        // this is the state of propagation, described in details below
         compatible = new int[wave.Length][][];
+
+        // preparing and filling up the `wave` and `compatible` arrays
         for (int i = 0; i < wave.Length; i++)
         {
             wave[i] = new bool[T];
@@ -51,6 +71,10 @@ abstract class Model
         sumOfWeights = 0;
         sumOfWeightLogWeights = 0;
 
+        // use the values of `weights` which were calculated in the `Init` method of
+        // a child class (`OverlappingModel` or `SimpleTiledModel`): `T` is the number of
+        // unique tiles/patterns found in the source, and the value of `weights[t]`
+        // is the number of times this tile/pattern appeared in the source
         for (int t = 0; t < T; t++)
         {
             weightLogWeights[t] = weights[t] * Math.Log(weights[t]);
@@ -60,11 +84,17 @@ abstract class Model
 
         startingEntropy = Math.Log(sumOfWeights) - sumOfWeightLogWeights / sumOfWeights;
 
+        // for the sake of caching and to not repeat unnecessary calculations,
+        // all the precalculated values are stored in the corresponding arrays
+        // of the size equal to the output image size, being flatten
         sumsOfOnes = new int[FMX * FMY];
         sumsOfWeights = new double[FMX * FMY];
         sumsOfWeightLogWeights = new double[FMX * FMY];
         entropies = new double[FMX * FMY];
 
+        // `stack`, where each element is the coordinate (TODO),
+        // and its size is the output image size multiplied
+        // by the number of unique patterns/tiles
         stack = new (int, int)[wave.Length * T];
         stacksize = 0;
     }

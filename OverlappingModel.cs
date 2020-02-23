@@ -182,14 +182,17 @@ class OverlappingModel : Model
         T = weights.Count;
         // make `ground` to not be higher than the number of unique patterns
         this.ground = (ground + T) % T;
-        // prepare the `patterns` array to have the size of `T`
+        // prepare the `patterns` array to have the size of `T`;
+        // each pattern here will be the flat array of bytes, size `N * N`
         patterns = new byte[T][];
+        // prepare the `weights` array of the _base_ class of size `T` to be filled with
+        // the numbers of times the particular pattern was met;
         base.weights = new double[T];
 
         int counter = 0;
         // walk through all the unique patterns hash-sums (in the order they were
-        // discovered) and restore the patterns back to the matrices of the color IDs,
-        // and also fill in the `base` class storage of weights with the `weights`
+        // discovered) and restore the patterns back to the matrices of the color IDs;
+        // and also fill in the _base_ class storage of weights with the `weights`
         // calculated before
         foreach (long w in ordering)
         {
