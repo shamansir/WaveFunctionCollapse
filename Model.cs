@@ -59,7 +59,7 @@ abstract class Model
         // this is the state of propagation, described in details below
         compatible = new int[wave.Length][][];
 
-        // preparing and filling up the `wave` and `compatible` arrays
+        // preparing the `wave` and `compatible` arrays
         for (int i = 0; i < wave.Length; i++)
         {
             wave[i] = new bool[T];
@@ -87,6 +87,9 @@ abstract class Model
         // for the sake of caching and to not repeat unnecessary calculations,
         // all the precalculated values are stored in the corresponding arrays
         // of the size equal to the output image size, being flatten
+
+        // `sumOfOnes` stores the amount of possibilities left to consider,
+        // for every slot in the output
         sumsOfOnes = new int[FMX * FMY];
         sumsOfWeights = new double[FMX * FMY];
         sumsOfWeightLogWeights = new double[FMX * FMY];
@@ -101,40 +104,81 @@ abstract class Model
 
     bool? Observe()
     {
+        // the most possible minimum value
         double min = 1E+3;
         int argmin = -1;
 
+        // the main calculation of the entropy,
+        // `wave.Length` is equal to `FMX * FMY` here
         for (int i = 0; i < wave.Length; i++)
         {
+            // `OnBoundary` is overloaded in the children classes
+            // and skips (doesn't affect) the cells which are close to
+            // the edges; for `OverlappingModel` it is only if output
+            // is not `periodic` and if position falls into the pattern on
+            // the edge; for `SimpleTiledModel` it just controls if
+            // position is not outside the edges, also only if output is not
+            // `periodic`; `i % FMX` and `i / FMX` are `x` and `y`;
             if (OnBoundary(i % FMX, i / FMX)) continue;
 
+            // as it was mentioned above, `sumsOfOnes` holds the amount
+            // of possibilities left to consider for the output slot at the specified position
             int amount = sumsOfOnes[i];
+            // if it is turned out that there are no more options at any position,
+            // then it's a contradictions and the algorithm should completely stop;
             if (amount == 0) return false;
 
             double entropy = entropies[i];
+            // if there are still some options to consider (if amount equals to 1,
+            // the cell is solved) and entropy is less than anything we've checked
+            // before...
             if (amount > 1 && entropy <= min)
             {
+                // calculate the very small random noise value, to avoid sticking
+                // to the same solution over time
                 double noise = 1E-6 * random.NextDouble();
+                // and if entropy, with some random noise, is still minimal...
                 if (entropy + noise < min)
                 {
+                    // update the minimum entropy value to this entropy (with the noise)
                     min = entropy + noise;
+                    // set `argmin` flag to `i`, meaning that we did found at least one minimum
+                    // entropy value and the latest one was located at position `i`
                     argmin = i;
                 }
             }
         }
 
+        // if no minimum entropy was found, that means that the state is observed:
+        // all the solutions are known
         if (argmin == -1)
         {
             observed = new int[FMX * FMY];
+            // fill in the state of observation with the indices of the tiles/patterns for
+            // which `wave` had `true` in that position, one index per position,
+            // and it is the first such index found in the list of possibilities (notice `break`)
             for (int i = 0; i < wave.Length; i++) for (int t = 0; t < T; t++) if (wave[i][t]) { observed[i] = t; break; }
+            // now that `observed` array contains all the solutions, exit the observation
             return true;
         }
 
+        // `argmin` holds the index of the output slot with the minimim entropy;
+
+        // fill in the `distribution` array (it has the size equal to the number of unique
+        // tiles/patterns found in the input) with the weights values for every tile/pattern
+        // for which `wave` has `true` value or `0` otherwise
         double[] distribution = new double[T];
         for (int t = 0; t < T; t++) distribution[t] = wave[argmin][t] ? weights[t] : 0;
+        // take index of the random tile from the distribution array and store it in `r` variable
         int r = distribution.Random(random.NextDouble());
+        // ?? seems the values in the `distribution` array are not used in any matter
 
+        // from `wave`, get the list of boolean values for the possibilities left
+        // for the cell with the minimum entropy
         bool[] w = wave[argmin];
+        // for all the possibilities, if the value in the `wave` for that possibility is
+        // falsy, or the tile/pattern index by accident is equal to the random `r` index,
+        // ban that possibility (set the value in the `wave` to `false`)
         for (int t = 0; t < T; t++) if (w[t] != (t == r)) Ban(argmin, t);
 
         return null;
