@@ -228,9 +228,11 @@ class OverlappingModel : Model
                 List<int> list = new List<int>();
                 // for every unique pattern, take the other unique pattern
                 // from the same list and if they agree (match) at the
-                // `(DX[case_index], DY[case_index])` point,
-                // add the latter to the list of successes at this position
+                // `(DX[case_index], DY[case_index])` point (which gives four directions:
+                // `E`, `S`, `W`, `N`), then add the latter to the list of
+                // successful matches at this position
                 for (int t2 = 0; t2 < T; t2++) if (agrees(patterns[t], patterns[t2], DX[d], DY[d])) list.Add(t2);
+                // fill in the `propagator` with the successfull matches collected in a list
                 propagator[d][t] = new int[list.Count];
                 for (int c = 0; c < list.Count; c++) propagator[d][t][c] = list[c];
             }

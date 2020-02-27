@@ -56,6 +56,8 @@ abstract class Model
         // to the list of the possible outcomes), but contains arrays of four integers
         // instead of one boolean, so each outcome has a corresponding four-integer array
         // associated with it, four is the number of possible directions: `N`, `S`, `W`, `E`;
+        // those four numbers represent the amount of tiles/patterns compatible
+        // with this tile/pattern for every direction;
         // this is the state of propagation, described in details below
         compatible = new int[wave.Length][][];
 
@@ -177,7 +179,7 @@ abstract class Model
         // for the cell with the minimum entropy
         bool[] w = wave[argmin];
         // for all the possibilities, if the value in the `wave` for that possibility is
-        // falsy, or the tile/pattern index by accident is equal to the random `r` index,
+        // falsey, or the tile/pattern index by accident is equal to the random `r` index,
         // ban that possibility (set the value in the `wave` to `false`)
         for (int t = 0; t < T; t++) if (w[t] != (t == r)) Ban(argmin, t);
 
@@ -186,35 +188,68 @@ abstract class Model
 
     protected void Propagate()
     {
+        // stack contains the banned possibilities (tiles/patterns)
+        // at particular positions in the output;
+        // the stack can grow from inside this loop, so
         while (stacksize > 0)
         {
+            // pop the next pair of position and possibility from `stack`
             var e1 = stack[stacksize - 1];
             stacksize--;
 
             int i1 = e1.Item1;
+            // convert index to the X/Y coordinates back
             int x1 = i1 % FMX, y1 = i1 / FMX;
 
+            // for every direction
             for (int d = 0; d < 4; d++)
             {
+                // find `x2` and `y2` which are `x1` and `y1` moved
+                // in the given direction
                 int dx = DX[d], dy = DY[d];
                 int x2 = x1 + dx, y2 = y1 + dy;
+                // if the new position turned out to be on boundary, skip it
                 if (OnBoundary(x2, y2)) continue;
 
+                // wrap the edges of the output, so the left edge and right edge
+                // are bound together and top edge and bottom edges as well
                 if (x2 < 0) x2 += FMX;
                 else if (x2 >= FMX) x2 -= FMX;
                 if (y2 < 0) y2 += FMY;
                 else if (y2 >= FMY) y2 -= FMY;
 
+                // calculate the index from this position
                 int i2 = x2 + y2 * FMX;
+                // `e1.Item2` is the index of the of the tile/pattern which was banned
+                // during the latest observation;
+                // `propagator` contains the information about the tiles/patterns that
+                // match to the given tile/pattern (the banned one, in this case)
+                // at every direction;
+                // so here we load the list of the tiles/patterns that match the banned pattern
+                // at the direction currently under consideration;
                 int[] p = propagator[d][e1.Item2];
+                // `compatible` array stores the number of the tiles/patterns matching to that
+                // tile/pattern in the output, but unlike `sumOfOnes`, this one is about the
+                // neigbourgs of the slot rather that the slot itself
                 int[][] compat = compatible[i2];
 
+                // for every tile/pattern that were matching the banned tile at this position
                 for (int l = 0; l < p.Length; l++)
                 {
+                    // store its ID in `t2`
                     int t2 = p[l];
+
+                    // by this ID, find how much there were compatible tiles/patterns left for
+                    // this tile/pattern
                     int[] comp = compat[t2];
 
+                    // reduce the number of such tiles/patterns
                     comp[d]--;
+                    // and if it became zero, ban this possibility as well;
+                    // NB: that action puts the newly banned possibility in stack
+                    // and so increases the `stacksize` again, so provocating (or propagating)
+                    // that action again and again until all the questionable combinations
+                    // are solved;
                     if (comp[d] == 0) Ban(i2, t2);
                 }
             }
@@ -225,11 +260,21 @@ abstract class Model
     {
         if (wave == null) Init();
 
+        // clear is not actually clearing values, but sets the
+        // values to initial; including setting all `wave` values to `true`
+        // and loading values from `propagator` (overloaded in the child model)
+        // into the `compatible` array
         Clear();
         random = new Random(seed);
 
+        // try until the limit of tries is reached
         for (int l = 0; l < limit || limit == 0; l++)
         {
+            // observe: if result of the observation is `null` (observations are done
+            // without explicit result), do the propogation and continue; if result is
+            // `true`, then the output is fully observed, so exit with a success;
+            // if result is `false` — that means the output cannot be solved,
+            // it's a contracdiction, exit with failure;
             bool? result = Observe();
             if (result != null) return (bool)result;
             Propagate();
@@ -240,31 +285,50 @@ abstract class Model
 
     protected void Ban(int i, int t)
     {
+        // banning is setting the exact possibility in the given position to `false`;
+        // `i` is the index of the X/Y position, but in the flatten array, `t` is the
+        // index of the tile/pattern which would fit at this position
         wave[i][t] = false;
 
+        // clear the `compatible` counter for that position and tile/pattern to `0`
+        // in all four directions
         int[] comp = compatible[i][t];
         for (int d = 0; d < 4; d++) comp[d] = 0;
+        // we put the pair of the X/Y position and the posiibility (tile/pattern) index
+        // onto the stack
         stack[stacksize] = (i, t);
         stacksize++;
 
+        // reduce the amount of tiles/patterns which can fit at this position
         sumsOfOnes[i] -= 1;
+        // reduce the sum of weights by the weight of this tile/pattern for this position
+        // in the output
         sumsOfWeights[i] -= weights[t];
+        // as well as logarithm of weight
         sumsOfWeightLogWeights[i] -= weightLogWeights[t];
 
+        // recalculate the entropy for this position
         double sum = sumsOfWeights[i];
         entropies[i] = Math.Log(sum) - sumsOfWeightLogWeights[i] / sum;
     }
 
     protected virtual void Clear()
     {
+        // through all the output positions
         for (int i = 0; i < wave.Length; i++)
         {
+            // and every unique tile/pattern
             for (int t = 0; t < T; t++)
             {
+                // enable the possibility of it to appeear to `true` in the `wave` array
                 wave[i][t] = true;
+                // collect the number of `compatible` tiles/patterns for that position
+                // when it is shifted in given direction, by using the data from the `propagator`
+                // but in opposite direction;
                 for (int d = 0; d < 4; d++) compatible[i][t][d] = propagator[opposite[d]][t].Length;
             }
 
+            // `sumOfOnes` contains the amount of possible answers, which is equal to
             sumsOfOnes[i] = weights.Length;
             sumsOfWeights[i] = sumOfWeights;
             sumsOfWeightLogWeights[i] = sumOfWeightLogWeights;
