@@ -58,7 +58,7 @@ abstract class Model
         // associated with it, four is the number of possible directions: `N`, `S`, `W`, `E`;
         // those four numbers represent the amount of tiles/patterns compatible
         // with this tile/pattern for every direction;
-        // this is the state of propagation, described in details below
+        // this is the state of propagation, described in details below;
         compatible = new int[wave.Length][][];
 
         // preparing the `wave` and `compatible` arrays
@@ -127,7 +127,7 @@ abstract class Model
             // of possibilities left to consider for the output slot at the specified position
             int amount = sumsOfOnes[i];
             // if it is turned out that there are no more options at any position,
-            // then it's a contradictions and the algorithm should completely stop;
+            // then it's a contradiction and the algorithm should completely stop;
             if (amount == 0) return false;
 
             double entropy = entropies[i];
@@ -168,19 +168,22 @@ abstract class Model
 
         // fill in the `distribution` array (it has the size equal to the number of unique
         // tiles/patterns found in the input) with the weights values for every tile/pattern
-        // for which `wave` has `true` value or `0` otherwise
+        // for which `wave` has `true` value, or `0` otherwise
         double[] distribution = new double[T];
         for (int t = 0; t < T; t++) distribution[t] = wave[argmin][t] ? weights[t] : 0;
-        // take index of the random tile from the distribution array and store it in `r` variable
+        // find a random point in the distribution, weighted by frequency,
+        // and store its index in the `r` variable
         int r = distribution.Random(random.NextDouble());
-        // ?? seems the values in the `distribution` array are not used in any matter
 
-        // from `wave`, get the list of boolean values for the possibilities left
-        // for the cell with the minimum entropy
+        // from `wave`, for the cell with the minimum entropy,
+        // get the list of boolean values, representing if the possibilities left
         bool[] w = wave[argmin];
-        // for all the possibilities, if the value in the `wave` for that possibility is
-        // falsey, or the tile/pattern index by accident is equal to the random `r` index,
-        // ban that possibility (set the value in the `wave` to `false`)
+
+        // for all the possibilities, leave only the one that was selected by `r`
+        // wave[t] == true,  (t == r) == true  => Leave
+        // wave[t] == true,  (t == r) == false => Ban
+        // wave[t] == false, (t == r) == true  => Ban
+        // wave[t] == false, (t == r) == false => Leave
         for (int t = 0; t < T; t++) if (w[t] != (t == r)) Ban(argmin, t);
 
         return null;
@@ -191,6 +194,15 @@ abstract class Model
         // stack contains the banned possibilities (tiles/patterns)
         // at particular positions in the output;
         // the stack can grow from inside this loop, so
+
+        // the logic for this code is:
+
+        // take the complete list of patterns that would match the banned pattern
+        // in the given direction [if that wouldn’t have been banned];
+        // then for every such pattern, which are potentially expected to also be banned,
+        // ensure that in the opposite direction there are no more matching patterns
+        // left to that pattern — and if there are none,
+        // ban it and perform the same procedure for this pattern at the moved position;
         while (stacksize > 0)
         {
             // pop the next pair of position and possibility from `stack`
@@ -240,16 +252,16 @@ abstract class Model
                     int t2 = p[l];
 
                     // by this ID, find how much there were compatible tiles/patterns left for
-                    // this tile/pattern
+                    // this other tile/pattern
                     int[] comp = compat[t2];
 
                     // reduce the number of such tiles/patterns
                     comp[d]--;
                     // and if it became zero, ban this possibility as well;
-                    // NB: that action puts the newly banned possibility in stack
+                    // NB: that action puts the newly banned possibility on stack
                     // and so increases the `stacksize` again, so provocating (or propagating)
                     // that action again and again until all the questionable combinations
-                    // are solved;
+                    // are removed;
                     if (comp[d] == 0) Ban(i2, t2);
                 }
             }

@@ -15,6 +15,7 @@ static class Stuff
 {
     public static int Random(this double[] a, double r)
     {
+        // make all values in the `a` to stay in 0..1 range and sum together to 1
         double sum = a.Sum();
         for (int j = 0; j < a.Length; j++) a[j] /= sum;
 
@@ -23,7 +24,9 @@ static class Stuff
 
         while (i < a.Length)
         {
+            // keep adding the values in 0..1 range to the `x`
             x += a[i];
+            // and at the point where `r` became less than `x`, return the index of this point
             if (r <= x) return i;
             i++;
         }
